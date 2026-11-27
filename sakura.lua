@@ -20,7 +20,6 @@ local MenuOpen = true
 
 local oldLightingTime = Lighting.ClockTime
 local oldIndex
-local oldNamecall
 
 -- 1. ВХ (Wallhack)
 local highlights = {}
@@ -107,7 +106,7 @@ FovStroke.Thickness = 2
 
 -- Главное окно
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 300, 0, 420) -- Увеличили под 6 кнопок
+MainFrame.Size = UDim2.new(0, 300, 0, 420)
 MainFrame.Position = UDim2.new(0.5, -150, 0.5, -210)
 MainFrame.BackgroundColor3 = Color3.fromRGB(255, 228, 235)
 MainFrame.BackgroundTransparency = 0.1
@@ -132,7 +131,6 @@ Title.Active = true
 Title.Draggable = true
 Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 12)
 
--- Функция для создания кнопок (чтобы не дублировать код)
 local function create_button(text, y_pos, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0.8, 0, 0, 35)
@@ -148,7 +146,6 @@ local function create_button(text, y_pos, callback)
     return btn
 end
 
--- Кнопки
 local WHBtn = create_button("Wallhack: ON", 0.13, function()
     if Unloaded then return end
     WallhackEnabled = not WallhackEnabled
@@ -218,7 +215,7 @@ Hint.Font = Enum.Font.Gotham
 Hint.TextSize = 12
 Hint.Parent = MainFrame
 
--- 4. Аим (Бридж)
+-- 4. Аим
 RunService.RenderStepped:Connect(function()
     if Unloaded or not AimEnabled then return end
     if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
@@ -230,7 +227,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- 5. No Recoil / No Spread
+-- 5. No Recoil / No Spread (Хук на __index)
 if getrawmetatable then
     local mt = getrawmetatable(game)
     oldIndex = mt.__index
@@ -239,14 +236,12 @@ if getrawmetatable then
     mt.__index = newcclosure(function(t, k)
         if Unloaded then return oldIndex(t, k) end
         
-        -- No Spread (пуля летит в центр экрана)
         if NoSpreadEnabled and t:IsA("Mouse") and (k == "Hit" or k == "Target") then
             return (k == "Hit" and CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + Camera.CFrame.LookVector * 1000) or nil)
         end
         
-        -- No Recoil (камера не дергается)
         if NoRecoilEnabled and t == Camera and k == "CFrame" then
-            return oldIndex(t, k) -- Возвращаем оригинал, блокируя попытки игры изменить камеру отдачей
+            return oldIndex(t, k)
         end
         
         return oldIndex(t, k)
@@ -254,7 +249,7 @@ if getrawmetatable then
     setreadonly(mt, true)
 end
 
--- 6. Misc (Всегда День)
+-- 6. Всегда День
 RunService.Heartbeat:Connect(function()
     if not Unloaded and DayEnabled then
         Lighting.ClockTime = 14
