@@ -21,8 +21,47 @@ local MenuOpen = true
 local oldLightingTime = Lighting.ClockTime
 local oldIndex
 
--- 1. ВХ (Wallhack)
+-- 1. ВХ + Инфо
 local highlights = {}
+local infos = {}
+
+local function update_info(plr)
+    if plr == LocalPlayer or not plr.Character or Unloaded then return end
+    local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+    local head = plr.Character:FindFirstChild("Head")
+    if hum and head then
+        local info = infos[plr]
+        if not info or not info.Parent then
+            info = Instance.new("BillboardGui")
+            info.Name = "SakuraInfo"
+            info.Adornee = head
+            info.Size = UDim2.new(0, 200, 0, 50)
+            info.StudsOffset = Vector3.new(0, 2.5, 0)
+            info.AlwaysOnTop = true
+            info.Parent = head
+            infos[plr] = info
+            local text = Instance.new("TextLabel")
+            text.Name = "InfoText"
+            text.Size = UDim2.new(1, 0, 1, 0)
+            text.BackgroundTransparency = 1
+            text.TextColor3 = Color3.fromRGB(255, 255, 255)
+            text.TextStrokeTransparency = 0
+            text.Font = Enum.Font.GothamBold
+            text.TextSize = 14
+            text.Parent = info
+        end
+        local health = math.floor(hum.Health)
+        local maxHealth = math.floor(hum.MaxHealth)
+        local weapon = "Unarmed"
+        local tool = plr.Character:FindFirstChildOfClass("Tool")
+        if tool then weapon = tool.Name end
+        local textLabel = info:FindFirstChild("InfoText")
+        if textLabel then
+            textLabel.Text = string.format("[%d/%d HP] | %s", health, maxHealth, weapon)
+        end
+    end
+end
+
 local function apply_esp(plr)
     if plr == LocalPlayer or not plr.Character or Unloaded then return end
     if highlights[plr] then return end
@@ -38,43 +77,56 @@ local function apply_esp(plr)
         highlights[plr] = hl
     end
 end
+
 local function remove_esp()
     for plr, hl in pairs(highlights) do
         if hl then hl:Destroy() end
         highlights[plr] = nil
     end
+    for plr, info in pairs(infos) do
+        if info then info:Destroy() end
+        infos[plr] = nil
+    end
 end
+
 local function update_esp()
     if WallhackEnabled and not Unloaded then
-        for _, p in pairs(Players:GetPlayers()) do apply_esp(p) end
+        for _, p in pairs(Players:GetPlayers()) do 
+            apply_esp(p)
+            update_info(p)
+        end
     else
         remove_esp()
     end
 end
+
 Players.PlayerAdded:Connect(function(p)
     p.CharacterAdded:Connect(function()
         task.wait(1)
-        if WallhackEnabled and not Unloaded then apply_esp(p) end
+        if WallhackEnabled and not Unloaded then 
+            apply_esp(p)
+            update_info(p)
+        end
     end)
 end)
 update_esp()
 
--- 2. Поиск цели
+-- 2. Поиск цели (В ГОЛОВУ)
 local function get_target()
     local closest = nil
     local shortest = FOV
     local center = Camera.ViewportSize / 2
     for _, plr in pairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character then
-            local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+            local head = plr.Character:FindFirstChild("Head")
             local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-            if hrp and hum and hum.Health > 0 then
-                local pos, on_screen = Camera:WorldToViewportPoint(hrp.Position)
+            if head and hum and hum.Health > 0 then
+                local pos, on_screen = Camera:WorldToViewportPoint(head.Position)
                 if on_screen then
                     local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
                     if dist < shortest then
                         shortest = dist
-                        closest = hrp
+                        closest = head
                     end
                 end
             end
@@ -92,6 +144,7 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "SakuraUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = playerGui
+ScreenGui.IgnoreGuiInset = true -- Важно для кликов
 
 -- Круг FOV
 local FovFrame = Instance.new("Frame")
@@ -106,14 +159,14 @@ FovStroke.Thickness = 2
 
 -- Главное окно
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 300, 0, 420)
-MainFrame.Position = UDim2.new(0.5, -150, 0.5, -210)
+MainFrame.Size = UDim2.new(0, 300, 0, 400)
+MainFrame.Position = UDim2.new(0.5, -150, 0.5, -200)
 MainFrame.BackgroundColor3 = Color3.fromRGB(255, 228, 235)
 MainFrame.BackgroundTransparency = 0.1
 MainFrame.BorderSizePixel = 0
 MainFrame.Parent = ScreenGui
 MainFrame.Active = true
-MainFrame.Draggable = true
+MainFrame.Draggable = true -- Таскается за заголовок
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
 local UIStroke = Instance.new("UIStroke", MainFrame)
 UIStroke.Color = Color3.fromRGB(255, 105, 180)
@@ -128,8 +181,66 @@ Title.Font = Enum.Font.GothamBold
 Title.TextSize = 18
 Title.Parent = MainFrame
 Title.Active = true
-Title.Draggable = true
+Title.Draggable = true -- Таскается за заголовок
 Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 12)
+
+-- Контейнер для вкладок
+local TabContainer = Instance.new("Frame")
+TabContainer.Size = UDim2.new(1, 0, 0, 30)
+TabContainer.Position = UDim2.new(0, 0, 0, 40)
+TabContainer.BackgroundTransparency = 1
+TabContainer.Parent = MainFrame
+
+local function create_tab(text, x_pos, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.3, 0, 1, 0)
+    btn.Position = UDim2.new(x_pos, 0, 0, 0)
+    btn.BackgroundColor3 = Color3.fromRGB(255, 182, 193)
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    btn.Parent = TabContainer
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+    btn.MouseButton1Click:Connect(callback)
+    return btn
+end
+
+local CurrentTab = "Aim"
+local AimTab, VisualsTab, MiscTab, AimBtn, WHBtn, DayBtn, RecoilBtn, SpreadBtn, UnloadBtn
+local FovSlider, FovValueLabel
+
+local function switch_tab(tab_name)
+    CurrentTab = tab_name
+    AimTab.BackgroundColor3 = (tab_name == "Aim") and Color3.fromRGB(255, 105, 180) or Color3.fromRGB(255, 182, 193)
+    VisualsTab.BackgroundColor3 = (tab_name == "Visuals") and Color3.fromRGB(255, 105, 180) or Color3.fromRGB(255, 182, 193)
+    MiscTab.BackgroundColor3 = (tab_name == "Misc") and Color3.fromRGB(255, 105, 180) or Color3.fromRGB(255, 182, 193)
+    
+    for _, child in pairs(MainFrame:GetChildren()) do
+        if child:IsA("TextButton") or child:IsA("Frame") and child ~= TabContainer then
+            child.Visible = false
+        end
+    end
+    if FovSlider then FovSlider.Visible = false end
+    if FovValueLabel then FovValueLabel.Visible = false end
+    
+    if tab_name == "Aim" then
+        AimBtn.Visible = true
+        FovSlider.Visible = true
+        FovValueLabel.Visible = true
+    elseif tab_name == "Visuals" then
+        WHBtn.Visible = true
+    elseif tab_name == "Misc" then
+        DayBtn.Visible = true
+        RecoilBtn.Visible = true
+        SpreadBtn.Visible = true
+        UnloadBtn.Visible = true
+    end
+end
+
+AimTab = create_tab("Aim", 0.05, function() switch_tab("Aim") end)
+VisualsTab = create_tab("Visuals", 0.35, function() switch_tab("Visuals") end)
+MiscTab = create_tab("Misc", 0.65, function() switch_tab("Misc") end)
 
 local function create_button(text, y_pos, callback)
     local btn = Instance.new("TextButton")
@@ -141,12 +252,13 @@ local function create_button(text, y_pos, callback)
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 14
     btn.Parent = MainFrame
+    btn.Visible = false
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
     btn.MouseButton1Click:Connect(callback)
     return btn
 end
 
-local WHBtn = create_button("Wallhack: ON", 0.13, function()
+WHBtn = create_button("Wallhack: ON", 0.3, function()
     if Unloaded then return end
     WallhackEnabled = not WallhackEnabled
     WHBtn.Text = "Wallhack: " .. (WallhackEnabled and "ON" or "OFF")
@@ -154,35 +266,87 @@ local WHBtn = create_button("Wallhack: ON", 0.13, function()
     update_esp()
 end)
 
-local AimBtn = create_button("Aim: ON", 0.25, function()
+AimBtn = create_button("Aim: ON", 0.3, function()
     if Unloaded then return end
     AimEnabled = not AimEnabled
     AimBtn.Text = "Aim: " .. (AimEnabled and "ON" or "OFF")
     AimBtn.BackgroundColor3 = AimEnabled and Color3.fromRGB(255, 105, 180) or Color3.fromRGB(150, 150, 150)
 end)
 
-local DayBtn = create_button("Always Day: ON", 0.37, function()
+-- Слайдер FOV
+FovValueLabel = Instance.new("TextLabel")
+FovValueLabel.Size = UDim2.new(0.8, 0, 0, 20)
+FovValueLabel.Position = UDim2.new(0.1, 0, 0.45, 0)
+FovValueLabel.BackgroundTransparency = 1
+FovValueLabel.Text = "FOV: " .. FOV
+FovValueLabel.TextColor3 = Color3.fromRGB(200, 100, 150)
+FovValueLabel.Font = Enum.Font.GothamBold
+FovValueLabel.TextSize = 14
+FovValueLabel.Parent = MainFrame
+FovValueLabel.Visible = false
+
+FovSlider = Instance.new("TextButton")
+FovSlider.Size = UDim2.new(0.8, 0, 0, 20)
+FovSlider.Position = UDim2.new(0.1, 0, 0.55, 0)
+FovSlider.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+FovSlider.Text = ""
+FovSlider.Parent = MainFrame
+FovSlider.Visible = false
+Instance.new("UICorner", FovSlider).CornerRadius = UDim.new(0, 4)
+
+local sliderFill = Instance.new("Frame")
+sliderFill.Size = UDim2.new(FOV / 500, 0, 1, 0)
+sliderFill.BackgroundColor3 = Color3.fromRGB(255, 105, 180)
+sliderFill.Parent = FovSlider
+Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(0, 4)
+
+FovSlider.MouseButton1Down:Connect(function()
+    local isDragging = true
+    local connection
+    connection = UserInputService.InputChanged:Connect(function(input)
+        if isDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local mouseX = UserInputService:GetMouseLocation().X
+            local sliderAbsolutePos = FovSlider.AbsolutePosition.X
+            local sliderSize = FovSlider.AbsoluteSize.X
+            local newFov = math.clamp((mouseX - sliderAbsolutePos) / sliderSize * 500, 50, 500)
+            FOV = math.floor(newFov)
+            FovValueLabel.Text = "FOV: " .. FOV
+            sliderFill.Size = UDim2.new(FOV / 500, 0, 1, 0)
+            FovFrame.Size = UDim2.new(0, FOV * 2, 0, FOV * 2)
+            FovFrame.Position = UDim2.new(0.5, -FOV, 0.5, -FOV)
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            isDragging = false
+            if connection then connection:Disconnect() end
+        end
+    end)
+end)
+
+DayBtn = create_button("Always Day: ON", 0.3, function()
     if Unloaded then return end
     DayEnabled = not DayEnabled
     DayBtn.Text = "Always Day: " .. (DayEnabled and "ON" or "OFF")
     DayBtn.BackgroundColor3 = DayEnabled and Color3.fromRGB(255, 105, 180) or Color3.fromRGB(150, 150, 150)
 end)
 
-local RecoilBtn = create_button("No Recoil: ON", 0.49, function()
+RecoilBtn = create_button("No Recoil: ON", 0.42, function()
     if Unloaded then return end
     NoRecoilEnabled = not NoRecoilEnabled
     RecoilBtn.Text = "No Recoil: " .. (NoRecoilEnabled and "ON" or "OFF")
     RecoilBtn.BackgroundColor3 = NoRecoilEnabled and Color3.fromRGB(255, 105, 180) or Color3.fromRGB(150, 150, 150)
 end)
 
-local SpreadBtn = create_button("No Spread: ON", 0.61, function()
+SpreadBtn = create_button("No Spread: ON", 0.54, function()
     if Unloaded then return end
     NoSpreadEnabled = not NoSpreadEnabled
     SpreadBtn.Text = "No Spread: " .. (NoSpreadEnabled and "ON" or "OFF")
     SpreadBtn.BackgroundColor3 = NoSpreadEnabled and Color3.fromRGB(255, 105, 180) or Color3.fromRGB(150, 150, 150)
 end)
 
-local UnloadBtn = create_button("Выгрузить (Unload)", 0.73, function()
+UnloadBtn = create_button("Выгрузить (Unload)", 0.66, function()
     Unloaded = true
     AimEnabled = false
     WallhackEnabled = false
@@ -205,11 +369,13 @@ local UnloadBtn = create_button("Выгрузить (Unload)", 0.73, function()
     print("[Sakura] Скрипт выгружен.")
 end)
 
+switch_tab("Aim")
+
 local Hint = Instance.new("TextLabel")
 Hint.Size = UDim2.new(1, 0, 0, 20)
 Hint.Position = UDim2.new(0, 0, 1, -25)
 Hint.BackgroundTransparency = 1
-Hint.Text = "Правый Shift — скрыть/показать"
+Hint.Text = "Правый Shift — скрыть/показать (Курсор освобождается)"
 Hint.TextColor3 = Color3.fromRGB(200, 100, 150)
 Hint.Font = Enum.Font.Gotham
 Hint.TextSize = 12
@@ -218,7 +384,7 @@ Hint.Parent = MainFrame
 -- 4. Аим
 RunService.RenderStepped:Connect(function()
     if Unloaded or not AimEnabled then return end
-    if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+    if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) and not MenuOpen then -- Аим работает только когда меню закрыто
         local target = get_target()
         if target then
             local target_cf = CFrame.new(Camera.CFrame.Position, target.Position)
@@ -227,7 +393,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- 5. No Recoil / No Spread (Хук на __index)
+-- 5. No Recoil / No Spread
 if getrawmetatable then
     local mt = getrawmetatable(game)
     oldIndex = mt.__index
@@ -252,17 +418,34 @@ end
 -- 6. Всегда День
 RunService.Heartbeat:Connect(function()
     if not Unloaded and DayEnabled then
-        Lighting.ClockTime = 14
-        Lighting.Brightness = 2
-        Lighting.OutdoorAmbient = Color3.fromRGB(200, 200, 200)
+        if Lighting.ClockTime ~= 14 then
+            Lighting.ClockTime = 14
+            Lighting.Brightness = 2
+            Lighting.OutdoorAmbient = Color3.fromRGB(200, 200, 200)
+            Lighting.GlobalShadows = false
+        end
+    end
+    
+    if WallhackEnabled and not Unloaded then
+        for _, p in pairs(Players:GetPlayers()) do
+            update_info(p)
+        end
     end
 end)
 
--- 7. Правый Shift
+-- 7. Правый Shift (Освобождение мыши)
 UserInputService.InputBegan:Connect(function(input, gp)
     if input.KeyCode == Enum.KeyCode.RightShift and not Unloaded then
         MenuOpen = not MenuOpen
         MainFrame.Visible = MenuOpen
-        FovFrame.Visible = MenuOpen
+        
+        if MenuOpen then
+            -- Освобождаем курсор для кликов
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            UserInputService.MouseIconEnabled = true
+        else
+            -- Возвращаем блокировку курсора для игры
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        end
     end
 end)
